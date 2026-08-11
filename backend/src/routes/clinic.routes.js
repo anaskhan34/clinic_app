@@ -1,5 +1,7 @@
 import { Router } from "express";
 import * as clinicDataController from "../controllers/clinic.controller.js";
+import { authorize } from "../middleware/role.middleware.js";
+import { protect } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
@@ -10,12 +12,27 @@ router.get("/", clinicDataController.getClinicData);
 router.get("/:id", clinicDataController.getClinicById);
 
 // CREATE clinic
-router.post("/", clinicDataController.createClinic);
+router.post(
+  "/",
+  protect,
+  authorize("CLINIC_ADMIN"),
+  clinicDataController.createClinic,
+);
 
 // UPDATE clinic
-router.put("/:id", clinicDataController.updateClinic);
+router.put(
+  "/:id",
+  protect,
+  authorize("CLINIC_ADMIN"),
+  clinicDataController.updateClinic,
+);
 
 // DELETE clinic
-router.delete("/:id", clinicDataController.deleteClinic);
+router.delete(
+  "/:id",
+  protect,
+  authorize("CLINIC_ADMIN"),
+  clinicDataController.deleteClinic,
+);
 
 export const clinicRouter = router;

@@ -1,3 +1,4 @@
+import { User } from "../models/user.model.js";
 import { registerUser } from "../services/auth.service.js";
 import { loginUser } from "../services/auth.service.js";
 import { generateToken } from "../utils/generateToken.js";
@@ -56,4 +57,42 @@ export const login = async (req, res) => {
       message: error.message,
     });
   }
+};
+
+// checking jwt auth
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Logout user
+export const logout = (req, res) => {
+  res.clearCookie("accessToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Logout successful",
+  });
 };

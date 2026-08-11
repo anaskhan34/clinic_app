@@ -17,7 +17,7 @@ const startServer = async () => {
     console.log("MongoDB connected successfully");
 
     app.listen(PORT, () => {
-      console.log(`ClinicFlow server running on port ${PORT}`);
+      console.log(`ClinicFlow server running on port: ${PORT}`);
     });
   } catch (error) {
     console.error("Failed to start server:", error.message);

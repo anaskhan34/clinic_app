@@ -1,7 +1,7 @@
 import {
   hashedPassword,
   verifyPassword,
-} from "../../validations/password-validations.js";
+} from "../validations/password-validations.js";
 import { User } from "../models/user.model.js";
 
 // user registration
