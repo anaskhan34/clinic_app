@@ -11,7 +11,7 @@ const seedAdmin = async () => {
     console.log("MongoDB connected");
 
     const existingAdmin = await User.findOne({
-      email: "superadmin@clinicflow.com",
+      email: process.env.ADMIN_EMAIL,
     });
 
     if (existingAdmin) {
@@ -19,11 +19,11 @@ const seedAdmin = async () => {
       process.exit(0);
     }
 
-    const hashed = await hashedPassword("admin@123");
+    const hashed = await hashedPassword(process.env.ADMIN_PASSWORD);
 
     const admin = await User.create({
       name: "Super Admin",
-      email: "superadmin@clinicflow.com",
+      email: process.env.ADMIN_EMAIL,
       password: hashed,
       role: "SUPER_ADMIN",
     });
