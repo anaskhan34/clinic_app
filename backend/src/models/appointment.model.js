@@ -50,4 +50,15 @@ const appointmentSchema = new mongoose.Schema(
   },
 );
 
+appointmentSchema.index(
+  {
+    doctor: 1,
+    appointmentDate: 1,
+    appointmentTime: 1,
+  },
+  {
+    unique: true,
+  },
+);
+
 export const Appointment = mongoose.model("Appointment", appointmentSchema);
