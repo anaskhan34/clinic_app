@@ -3,7 +3,10 @@ import { Clinic } from "../models/clinic.model.js";
 // CREATE
 export const createClinic = async (req, res) => {
   try {
-    const clinic = await Clinic.create(req.body);
+    const clinic = await Clinic.create({
+      ...req.body,
+      owner: req.user.userId,
+    });
 
     res.status(201).json({
       success: true,

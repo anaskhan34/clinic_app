@@ -53,3 +53,27 @@ export const loginUser = async ({ email, password }) => {
     user: userResponse,
   };
 };
+
+// createClinicAdmin
+export const createClinicAdmin = async ({ name, email, password }) => {
+  const existingUser = await User.findOne({ email });
+
+  if (existingUser) {
+    throw new Error("User with this email already exists");
+  }
+
+  const hashed = await hashedPassword(password);
+
+  const user = await User.create({
+    name,
+    email,
+    password: hashed,
+    role: "CLINIC_ADMIN",
+  });
+
+  const userResponse = user.toObject();
+
+  delete userResponse.password;
+
+  return userResponse;
+};

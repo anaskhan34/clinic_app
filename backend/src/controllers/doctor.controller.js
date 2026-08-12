@@ -4,12 +4,22 @@ import { Clinic } from "../models/clinic.model.js";
 // CREATE DOCTOR
 export const createDoctor = async (req, res) => {
   try {
-    const clinic = await Clinic.findById(req.body.clinic);
+    const { clinic } = req.body;
 
-    if (!clinic) {
+    const clinicExists = await Clinic.findById(clinic);
+
+    if (!clinicExists) {
       return res.status(404).json({
         success: false,
         message: "Clinic not found",
+      });
+    }
+
+    // Make sure the logged-in admin owns this clinic
+    if (clinicExists.owner.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to manage this clinic",
       });
     }
 
@@ -76,22 +86,7 @@ export const getDoctorById = async (req, res) => {
 // UPDATE DOCTOR
 export const updateDoctor = async (req, res) => {
   try {
-    // If clinic is being changed, verify new clinic exists
-    if (req.body.clinic) {
-      const clinic = await Clinic.findById(req.body.clinic);
-
-      if (!clinic) {
-        return res.status(404).json({
-          success: false,
-          message: "Clinic not found",
-        });
-      }
-    }
-
-    const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    }).populate("clinic", "name city address");
+    const doctor = await Doctor.findById(req.params.id);
 
     if (!doctor) {
       return res.status(404).json({
@@ -100,10 +95,35 @@ export const updateDoctor = async (req, res) => {
       });
     }
 
+    const clinic = await Clinic.findById(doctor.clinic);
+
+    if (!clinic) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic not found",
+      });
+    }
+
+    if (clinic.owner.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to manage this doctor",
+      });
+    }
+
+    const updatedDoctor = await Doctor.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).populate("clinic", "name city address");
+
     res.status(200).json({
       success: true,
       message: "Doctor updated successfully",
-      data: doctor,
+      data: updatedDoctor,
     });
   } catch (error) {
     res.status(400).json({
@@ -116,7 +136,7 @@ export const updateDoctor = async (req, res) => {
 // DELETE DOCTOR
 export const deleteDoctor = async (req, res) => {
   try {
-    const doctor = await Doctor.findByIdAndDelete(req.params.id);
+    const doctor = await Doctor.findById(req.params.id);
 
     if (!doctor) {
       return res.status(404).json({
@@ -124,6 +144,24 @@ export const deleteDoctor = async (req, res) => {
         message: "Doctor not found",
       });
     }
+
+    const clinic = await Clinic.findById(doctor.clinic);
+
+    if (!clinic) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic not found",
+      });
+    }
+
+    if (clinic.owner.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to delete this doctor",
+      });
+    }
+
+    await Doctor.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
       success: true,

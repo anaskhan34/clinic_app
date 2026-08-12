@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import { clinicRouter } from "./routes/clinic.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import { doctorRouter } from "./routes/doctor.routes.js";
+import { appointmentRouter } from "./routes/appointment.routes.js";
 const app = express();
 
 // Global middleware
@@ -23,6 +24,7 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/clinics", clinicRouter);
 app.use("/api/doctors", doctorRouter);
+app.use("/api/appointments", appointmentRouter);
 
 // Root route
 
