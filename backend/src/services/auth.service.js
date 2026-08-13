@@ -69,6 +69,7 @@ export const createClinicAdmin = async ({ name, email, password }) => {
     email,
     password: hashed,
     role: "CLINIC_ADMIN",
+    clinicId: null,
   });
 
   const userResponse = user.toObject();

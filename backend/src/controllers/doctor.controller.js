@@ -1,34 +1,86 @@
 import { Doctor } from "../models/doctor.model.js";
 import { Clinic } from "../models/clinic.model.js";
+import { User } from "../models/user.model.js";
+import { hashedPassword } from "../validations/password-validations.js";
 
 // CREATE DOCTOR
 export const createDoctor = async (req, res) => {
   try {
-    const { clinic } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      password,
+      specialization,
+      qualification,
+      experience,
+      consultationFee,
+      image,
+    } = req.body;
 
-    const clinicExists = await Clinic.findById(clinic);
-
-    if (!clinicExists) {
-      return res.status(404).json({
+    if (!name || !email || !specialization) {
+      return res.status(400).json({
         success: false,
-        message: "Clinic not found",
+        message: "Name, email and specialization are required",
       });
     }
 
-    // Make sure the logged-in admin owns this clinic
-    if (clinicExists.owner.toString() !== req.user.userId) {
-      return res.status(403).json({
+    console.log(req.user);
+
+    // Clinic Admin must have a clinic
+    if (!req.user.clinicId) {
+      return res.status(400).json({
         success: false,
-        message: "You are not authorized to manage this clinic",
+        message: "You don't have a clinic assigned",
       });
     }
 
-    const doctor = await Doctor.create(req.body);
+    // Check if doctor email already exists
+    const existingDoctor = await Doctor.findOne({ email });
+
+    if (existingDoctor) {
+      return res.status(409).json({
+        success: false,
+        message: "Doctor with this email already exists",
+      });
+    }
+
+    // Create doctor using admin's clinic
+    const doctor = await Doctor.create({
+      name,
+      email,
+      phone,
+      specialization,
+      qualification,
+      experience,
+      consultationFee,
+      image,
+      clinicId: req.user.clinicId,
+    });
+    const hashed = await hashedPassword(password);
+
+    // Create doctor login account
+    const doctorUser = await User.create({
+      name,
+      email,
+      password: hashed,
+      role: "DOCTOR",
+      doctorId: doctor._id,
+      clinicId: req.user.clinicId,
+    });
 
     res.status(201).json({
       success: true,
       message: "Doctor created successfully",
-      data: doctor,
+      data: {
+        doctor,
+        user: {
+          id: doctorUser._id,
+          name: doctorUser.name,
+          email: doctorUser.email,
+          role: doctorUser.role,
+        },
+      },
     });
   } catch (error) {
     res.status(400).json({
@@ -41,7 +93,10 @@ export const createDoctor = async (req, res) => {
 // GET ALL DOCTORS
 export const getDoctors = async (req, res) => {
   try {
-    const doctors = await Doctor.find().populate("clinic", "name city address");
+    const doctors = await Doctor.find().populate(
+      "clinicId",
+      "name city address",
+    );
 
     res.status(200).json({
       success: true,
@@ -60,7 +115,7 @@ export const getDoctors = async (req, res) => {
 export const getDoctorById = async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.params.id).populate(
-      "clinic",
+      "clinicId",
       "name city address",
     );
 
@@ -95,7 +150,7 @@ export const updateDoctor = async (req, res) => {
       });
     }
 
-    const clinic = await Clinic.findById(doctor.clinic);
+    const clinic = await Clinic.findById(doctor.clinicId);
 
     if (!clinic) {
       return res.status(404).json({
@@ -104,7 +159,7 @@ export const updateDoctor = async (req, res) => {
       });
     }
 
-    if (clinic.owner.toString() !== req.user.userId) {
+    if (clinic.ownerId.toString() !== req.user.userId) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to manage this doctor",
@@ -118,7 +173,7 @@ export const updateDoctor = async (req, res) => {
         new: true,
         runValidators: true,
       },
-    ).populate("clinic", "name city address");
+    ).populate("clinicId", "name city address");
 
     res.status(200).json({
       success: true,
@@ -145,7 +200,7 @@ export const deleteDoctor = async (req, res) => {
       });
     }
 
-    const clinic = await Clinic.findById(doctor.clinic);
+    const clinic = await Clinic.findById(doctor.clinicId);
 
     if (!clinic) {
       return res.status(404).json({

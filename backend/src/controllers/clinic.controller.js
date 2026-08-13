@@ -1,17 +1,79 @@
 import { Clinic } from "../models/clinic.model.js";
+import { User } from "../models/user.model.js";
+import { generateToken } from "../utils/generateToken.js";
 
-// CREATE
+// createClinic
 export const createClinic = async (req, res) => {
   try {
+    // Prevent admin from creating multiple clinics
+    if (req.user.clinicId) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have a clinic",
+      });
+    }
+
+    // Create clinic
     const clinic = await Clinic.create({
       ...req.body,
-      owner: req.user.userId,
+      ownerId: req.user.userId,
+    });
+
+    // Assign newly created clinic to the admin
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.userId,
+      {
+        clinicId: clinic._id,
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!updatedUser) {
+      // Safety: remove clinic if admin doesn't exist
+      await Clinic.findByIdAndDelete(clinic._id);
+
+      return res.status(404).json({
+        success: false,
+        message: "Clinic admin not found",
+      });
+    }
+
+    console.log("UPDATED USER:", {
+      id: updatedUser._id,
+      clinicId: updatedUser.clinicId,
+    });
+
+    // Generate new JWT with clinicId
+    const token = generateToken({
+      userId: updatedUser._id,
+      role: updatedUser.role,
+      doctorId: updatedUser.doctorId || null,
+      clinicId: updatedUser.clinicId,
+    });
+
+    // Replace old JWT cookie
+    res.cookie("accessToken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
     res.status(201).json({
       success: true,
-      message: "Clinic created successfully",
-      data: clinic,
+      message: "Clinic created and assigned successfully",
+      data: {
+        clinic,
+        admin: {
+          id: updatedUser._id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          clinicId: updatedUser.clinicId,
+        },
+      },
     });
   } catch (error) {
     res.status(400).json({
@@ -66,15 +128,22 @@ export const getClinicById = async (req, res) => {
 // UPDATE
 export const updateClinic = async (req, res) => {
   try {
-    const clinic = await Clinic.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const clinic = await Clinic.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        ownerId: req.user.userId,
+      },
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
 
     if (!clinic) {
       return res.status(404).json({
         success: false,
-        message: "Clinic not found",
+        message: "Clinic not found or you are not authorized",
       });
     }
 
@@ -94,14 +163,22 @@ export const updateClinic = async (req, res) => {
 // DELETE
 export const deleteClinic = async (req, res) => {
   try {
-    const clinic = await Clinic.findByIdAndDelete(req.params.id);
+    const clinic = await Clinic.findOneAndDelete({
+      _id: req.params.id,
+      ownerId: req.user.userId,
+    });
 
     if (!clinic) {
       return res.status(404).json({
         success: false,
-        message: "Clinic not found",
+        message: "Clinic not found or you are not authorized",
       });
     }
+
+    // Remove clinic reference from admin
+    await User.findByIdAndUpdate(req.user.userId, {
+      clinicId: null,
+    });
 
     res.status(200).json({
       success: true,

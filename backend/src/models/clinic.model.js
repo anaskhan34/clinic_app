@@ -48,7 +48,7 @@ const clinicSchema = new mongoose.Schema(
     closingTime: {
       type: String,
     },
-    owner: {
+    ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,

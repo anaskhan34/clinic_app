@@ -19,53 +19,49 @@ export const sendAppointmentConfirmation = async ({
   appointmentTime,
   queueNumber,
 }) => {
-  await transporter.sendMail({
-    from: `"ClinicFlow" <${process.env.MAIL_USER}>`,
-    to: patientEmail,
-    subject: "Appointment Confirmation - ClinicFlow",
+  try {
+    const info = await transporter.sendMail({
+      from: `"ClinicFlow" <${process.env.MAIL_USER}>`,
+      to: patientEmail,
+      subject: "Appointment Confirmation - ClinicFlow",
 
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        
-        <h2>Appointment Confirmed</h2>
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+          <h2>Appointment Confirmed</h2>
 
-        <p>Hello ${patientName},</p>
+          <p>Hello ${patientName},</p>
 
-        <p>
-          Your appointment has been successfully booked.
-        </p>
+          <p>Your appointment has been successfully booked.</p>
 
-        <h3>Appointment Details</h3>
+          <h3>Appointment Details</h3>
 
-        <p>
-          <strong>Doctor:</strong> ${doctorName}
-        </p>
+          <p><strong>Doctor:</strong> ${doctorName}</p>
+          <p><strong>Clinic:</strong> ${clinicName}</p>
+          <p><strong>Date:</strong> ${appointmentDate}</p>
+          <p><strong>Time:</strong> ${appointmentTime}</p>
+          <p><strong>Queue Number:</strong> ${queueNumber}</p>
 
-        <p>
-          <strong>Clinic:</strong> ${clinicName}
-        </p>
+          <p>Please arrive a few minutes before your appointment.</p>
 
-        <p>
-          <strong>Date:</strong> ${appointmentDate}
-        </p>
+          <p>Thank you for choosing ClinicFlow.</p>
+        </div>
+      `,
+    });
 
-        <p>
-          <strong>Time:</strong> ${appointmentTime}
-        </p>
+    console.log("Email sent successfully:", info.messageId);
 
-        <p>
-          <strong>Queue Number:</strong> ${queueNumber}
-        </p>
+    return {
+      success: true,
+      message: "Appointment confirmation email sent successfully",
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    console.error("Email sending failed:", error);
 
-        <p>
-          Please arrive a few minutes before your appointment.
-        </p>
-
-        <p>
-          Thank you for choosing ClinicFlow.
-        </p>
-
-      </div>
-    `,
-  });
+    return {
+      success: false,
+      message: "Failed to send appointment confirmation email",
+      error: error.message,
+    };
+  }
 };

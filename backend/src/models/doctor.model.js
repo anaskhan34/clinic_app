@@ -34,7 +34,7 @@ const doctorSchema = new mongoose.Schema(
       type: Number,
     },
 
-    clinic: {
+    clinicId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Clinic",
       required: true,
