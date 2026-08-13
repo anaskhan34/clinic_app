@@ -1,6 +1,8 @@
 import { Appointment } from "../models/appointment.model.js";
 import { Doctor } from "../models/doctor.model.js";
 import { Clinic } from "../models/clinic.model.js";
+import { sendAppointmentConfirmation } from "../services/email.service.js";
+import { User } from "../models/user.model.js";
 
 export const createAppointment = async (req, res) => {
   try {
@@ -136,6 +138,15 @@ export const createAppointment = async (req, res) => {
 
     const queueNumber = lastAppointment ? lastAppointment.queueNumber + 1 : 1;
 
+    const patient = await User.findById(req.user.userId);
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
     // Create appointment
     const appointment = await Appointment.create({
       patient: req.user.userId,
@@ -147,6 +158,21 @@ export const createAppointment = async (req, res) => {
       status: "PENDING",
       queueNumber,
     });
+
+    // Send confirmation email
+    try {
+      await sendAppointmentConfirmation({
+        patientEmail: patient.email,
+        patientName: patient.name,
+        doctorName: doctorExists.name,
+        clinicName: clinicExists.name,
+        appointmentDate,
+        appointmentTime,
+        queueNumber,
+      });
+    } catch (emailError) {
+      console.error("Appointment email failed:", emailError.message);
+    }
 
     res.status(201).json({
       success: true,
