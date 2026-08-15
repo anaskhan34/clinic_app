@@ -4,20 +4,32 @@ import * as doctorController from "../controllers/doctor.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
 import { authorize } from "../middleware/role.middleware.js";
+import { upload } from "../middleware/upload.middleware.js";
 
 const router = Router();
 
 // GET all doctors
-router.get("/", doctorController.getDoctors);
+router.get(
+  "/",
+  protect,
+  authorize("PATIENT", "DOCTOR", "CLINIC_ADMIN", "SUPER_ADMIN"),
+  doctorController.getDoctors,
+);
 
 // GET doctor by ID
-router.get("/:id", doctorController.getDoctorById);
+router.get(
+  "/:id",
+  protect,
+  authorize("PATIENT", "DOCTOR", "CLINIC_ADMIN", "SUPER_ADMIN"),
+  doctorController.getDoctorById,
+);
 
 // CREATE doctor
 router.post(
   "/",
   protect,
   authorize("CLINIC_ADMIN"),
+  upload.single("image"),
   doctorController.createDoctor,
 );
 
@@ -25,7 +37,8 @@ router.post(
 router.put(
   "/:id",
   protect,
-  authorize("CLINIC_ADMIN"),
+  authorize("DOCTOR", "CLINIC_ADMIN"),
+  upload.single("image"),
   doctorController.updateDoctor,
 );
 

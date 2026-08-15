@@ -2,7 +2,10 @@ import { Doctor } from "../models/doctor.model.js";
 import { Clinic } from "../models/clinic.model.js";
 import { User } from "../models/user.model.js";
 import { hashedPassword } from "../validations/password-validations.js";
-
+import {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} from "../utils/uploadToCloudinary.js";
 // CREATE DOCTOR
 export const createDoctor = async (req, res) => {
   try {
@@ -15,17 +18,14 @@ export const createDoctor = async (req, res) => {
       qualification,
       experience,
       consultationFee,
-      image,
     } = req.body;
 
-    if (!name || !email || !specialization) {
+    if (!name || !email || !password || !specialization) {
       return res.status(400).json({
         success: false,
-        message: "Name, email and specialization are required",
+        message: "Name, email, password and specialization are required",
       });
     }
-
-    console.log(req.user);
 
     // Clinic Admin must have a clinic
     if (!req.user.clinicId) {
@@ -35,7 +35,7 @@ export const createDoctor = async (req, res) => {
       });
     }
 
-    // Check if doctor email already exists
+    // Check duplicate doctor
     const existingDoctor = await Doctor.findOne({ email });
 
     if (existingDoctor) {
@@ -45,7 +45,21 @@ export const createDoctor = async (req, res) => {
       });
     }
 
-    // Create doctor using admin's clinic
+    // Upload image if provided
+    let image = "";
+    let imagePublicId = "";
+
+    if (req.file) {
+      const result = await uploadToCloudinary(
+        req.file.buffer,
+        "clinicflow/doctors",
+      );
+
+      image = result.secure_url;
+      imagePublicId = result.public_id;
+    }
+
+    // Create doctor
     const doctor = await Doctor.create({
       name,
       email,
@@ -55,8 +69,11 @@ export const createDoctor = async (req, res) => {
       experience,
       consultationFee,
       image,
+      imagePublicId,
       clinicId: req.user.clinicId,
     });
+
+    // Hash password
     const hashed = await hashedPassword(password);
 
     // Create doctor login account
@@ -93,10 +110,35 @@ export const createDoctor = async (req, res) => {
 // GET ALL DOCTORS
 export const getDoctors = async (req, res) => {
   try {
-    const doctors = await Doctor.find().populate(
-      "clinicId",
-      "name city address",
-    );
+    const { clinicId, specialization, available } = req.query;
+
+    const filter = {};
+
+    if (clinicId) {
+      filter.clinicId = clinicId;
+    }
+
+    if (specialization) {
+      filter.specialization = specialization;
+    }
+
+    if (available !== undefined) {
+      filter.available = available === "true";
+    }
+
+    // Clinic admin can only see doctors of their clinic
+    if (req.user.role === "CLINIC_ADMIN") {
+      filter.clinicId = req.user.clinicId;
+    }
+
+    // Doctor only sees himself
+    if (req.user.role === "DOCTOR") {
+      filter._id = req.user.doctorId;
+    }
+
+    const doctors = await Doctor.find(filter)
+      .populate("clinicId", "name city address")
+      .sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
@@ -150,37 +192,73 @@ export const updateDoctor = async (req, res) => {
       });
     }
 
-    const clinic = await Clinic.findById(doctor.clinicId);
-
-    if (!clinic) {
-      return res.status(404).json({
-        success: false,
-        message: "Clinic not found",
-      });
+    // DOCTOR can update only himself
+    if (req.user.role === "DOCTOR") {
+      if (doctor._id.toString() !== req.user.doctorId) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to update this doctor",
+        });
+      }
     }
 
-    if (clinic.ownerId.toString() !== req.user.userId) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to manage this doctor",
-      });
+    // CLINIC_ADMIN can update only doctors in their clinic
+    if (req.user.role === "CLINIC_ADMIN") {
+      if (doctor.clinicId.toString() !== req.user.clinicId) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to update this doctor",
+        });
+      }
     }
 
-    const updatedDoctor = await Doctor.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      },
-    ).populate("clinicId", "name city address");
+    // Always make sure body exists
+    const updateData = req.body || {};
+
+    // These fields cannot be changed
+    delete updateData.clinicId;
+    delete updateData.image;
+    delete updateData.imagePublicId;
+
+    // ============================
+    // UPDATE IMAGE
+    // ============================
+
+    if (req.file) {
+      const result = await uploadToCloudinary(
+        req.file.buffer,
+        "clinicflow/doctors",
+      );
+
+      // Delete old Cloudinary image
+      if (doctor.imagePublicId) {
+        await deleteFromCloudinary(doctor.imagePublicId);
+      }
+
+      // Save NEW image information
+      doctor.image = result.secure_url;
+      doctor.imagePublicId = result.public_id;
+    }
+
+    // ============================
+    // UPDATE OTHER FIELDS
+    // ============================
+
+    Object.assign(doctor, updateData);
+
+    await doctor.save();
+
+    // Populate clinic after saving
+    await doctor.populate("clinicId", "name city address");
 
     res.status(200).json({
       success: true,
       message: "Doctor updated successfully",
-      data: updatedDoctor,
+      data: doctor,
     });
   } catch (error) {
+    console.error("UPDATE DOCTOR ERROR:", error);
+
     res.status(400).json({
       success: false,
       message: error.message,
@@ -200,23 +278,28 @@ export const deleteDoctor = async (req, res) => {
       });
     }
 
-    const clinic = await Clinic.findById(doctor.clinicId);
-
-    if (!clinic) {
-      return res.status(404).json({
-        success: false,
-        message: "Clinic not found",
-      });
+    // Clinic admin can delete only doctors in their clinic
+    if (req.user.role === "CLINIC_ADMIN") {
+      if (doctor.clinicId.toString() !== req.user.clinicId) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to delete this doctor",
+        });
+      }
     }
 
-    if (clinic.owner.toString() !== req.user.userId) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to delete this doctor",
-      });
+    // Delete image from Cloudinary
+    if (doctor.imagePublicId) {
+      await deleteFromCloudinary(doctor.imagePublicId);
     }
 
+    // Delete doctor
     await Doctor.findByIdAndDelete(req.params.id);
+
+    // Delete doctor's login account
+    await User.findOneAndDelete({
+      doctorId: doctor._id,
+    });
 
     res.status(200).json({
       success: true,
@@ -225,7 +308,7 @@ export const deleteDoctor = async (req, res) => {
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: "Invalid doctor ID",
+      message: error.message,
     });
   }
 };

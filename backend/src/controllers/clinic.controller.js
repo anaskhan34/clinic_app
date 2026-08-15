@@ -5,11 +5,38 @@ import { generateToken } from "../utils/generateToken.js";
 // createClinic
 export const createClinic = async (req, res) => {
   try {
+    const { name, email, phone, address } = req.body;
+
+    // Required fields
+    if (!name || !email || !phone || !address) {
+      return res.status(400).json({
+        success: false,
+        message: "All Fields are required",
+      });
+    }
+
+    console.log("cliid", req.user.clinicId);
+
     // Prevent admin from creating multiple clinics
     if (req.user.clinicId) {
       return res.status(400).json({
         success: false,
         message: "You already have a clinic",
+      });
+    }
+
+    // Normalize email
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check if clinic already exists
+    const existingClinic = await Clinic.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingClinic) {
+      return res.status(409).json({
+        success: false,
+        message: "A clinic with this email already exists",
       });
     }
 
@@ -86,7 +113,24 @@ export const createClinic = async (req, res) => {
 // READ ALL
 export const getClinicData = async (req, res) => {
   try {
-    const clinics = await Clinic.find();
+    let filter = {};
+    console.log("get clinic data line 90", req.user.role);
+    console.log("get clinic data line 91", filter);
+
+    // Clinic admin → only their clinic
+    if (req.user.role === "CLINIC_ADMIN") {
+      filter.ownerId = req.user.userId;
+    }
+
+    // SUPER_ADMIN → all clinics
+    const clinics = await Clinic.find(filter);
+
+    if (!clinics) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic not found",
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -113,6 +157,17 @@ export const getClinicById = async (req, res) => {
       });
     }
 
+    // Clinic admin can only access their own clinic
+    if (
+      req.user.role === "CLINIC_ADMIN" &&
+      clinic.ownerId.toString() !== req.user.userId
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to view this clinic",
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: clinic,
@@ -128,11 +183,27 @@ export const getClinicById = async (req, res) => {
 // UPDATE
 export const updateClinic = async (req, res) => {
   try {
-    const clinic = await Clinic.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        ownerId: req.user.userId,
-      },
+    const clinic = await Clinic.findById(req.params.id);
+
+    if (!clinic) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic not found",
+      });
+    }
+
+    // CLINIC_ADMIN can only update their own clinic
+    if (req.user.role === "CLINIC_ADMIN") {
+      if (clinic.ownerId.toString() !== req.user.userId) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to update this clinic",
+        });
+      }
+    }
+
+    const updatedClinic = await Clinic.findByIdAndUpdate(
+      req.params.id,
       req.body,
       {
         new: true,
@@ -140,17 +211,10 @@ export const updateClinic = async (req, res) => {
       },
     );
 
-    if (!clinic) {
-      return res.status(404).json({
-        success: false,
-        message: "Clinic not found or you are not authorized",
-      });
-    }
-
     res.status(200).json({
       success: true,
       message: "Clinic updated successfully",
-      data: clinic,
+      data: updatedClinic,
     });
   } catch (error) {
     res.status(400).json({
@@ -163,31 +227,102 @@ export const updateClinic = async (req, res) => {
 // DELETE
 export const deleteClinic = async (req, res) => {
   try {
-    const clinic = await Clinic.findOneAndDelete({
-      _id: req.params.id,
+    const clinic = await Clinic.findById(req.params.id);
+
+    if (!clinic) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic not found",
+      });
+    }
+
+    // Clinic Admin can only delete their own clinic
+    if (req.user.role === "CLINIC_ADMIN") {
+      if (clinic.ownerId.toString() !== req.user.userId) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to delete this clinic",
+        });
+      }
+    }
+
+    // Remove clinic reference from admin
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        clinicId: clinic._id,
+      },
+      {
+        $set: {
+          clinicId: null,
+        },
+      },
+      {
+        new: true, //give the latest data
+      },
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic admin not found",
+      });
+    }
+
+    console.log("UPDATED USER AFTER DELETE:", {
+      id: updatedUser._id,
+      clinicId: updatedUser.clinicId,
+    });
+
+    // Delete clinic
+    await clinic.deleteOne();
+
+    // Generate new JWT with clinicId = null
+    const token = generateToken(updatedUser);
+
+    // Replace old JWT cookie
+    res.cookie("accessToken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Clinic deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete clinic error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// getMyClinic API controller for only clinic admin
+export const getMyClinic = async (req, res) => {
+  try {
+    const clinic = await Clinic.findOne({
       ownerId: req.user.userId,
     });
 
     if (!clinic) {
       return res.status(404).json({
         success: false,
-        message: "Clinic not found or you are not authorized",
+        message: "You don't have a clinic",
       });
     }
 
-    // Remove clinic reference from admin
-    await User.findByIdAndUpdate(req.user.userId, {
-      clinicId: null,
-    });
-
     res.status(200).json({
       success: true,
-      message: "Clinic deleted successfully",
+      data: clinic,
     });
   } catch (error) {
-    res.status(400).json({
+    res.status(500).json({
       success: false,
-      message: "Invalid clinic ID",
+      message: error.message,
     });
   }
 };

@@ -1,14 +1,11 @@
 import { Router } from "express";
-
 import * as appointmentController from "../controllers/appointment.controller.js";
-
 import { protect } from "../middleware/auth.middleware.js";
 import { authorize } from "../middleware/role.middleware.js";
 
 const router = Router();
 
-// Patient creates appointment
-// CREATE
+// CREATE APPOINTMENT
 router.post(
   "/",
   protect,
@@ -16,7 +13,7 @@ router.post(
   appointmentController.createAppointment,
 );
 
-// GET ALL
+// GET ALL APPOINTMENTS
 router.get(
   "/",
   protect,
@@ -24,7 +21,31 @@ router.get(
   appointmentController.getAppointments,
 );
 
-// GET ONE
+// GET AVAILABLE SLOTS
+router.get(
+  "/slots",
+  protect,
+  authorize("PATIENT", "DOCTOR", "CLINIC_ADMIN", "SUPER_ADMIN"),
+  appointmentController.getAvailableSlots,
+);
+
+// getQueue
+router.get(
+  "/queue",
+  protect,
+  authorize("DOCTOR", "CLINIC_ADMIN", "SUPER_ADMIN"),
+  appointmentController.getQueue,
+);
+
+// getDoctorQueue
+router.get(
+  "/queue",
+  protect,
+  authorize("DOCTOR"),
+  appointmentController.getDoctorQueue,
+);
+
+// GET ONE APPOINTMENT
 router.get(
   "/:id",
   protect,
@@ -32,7 +53,7 @@ router.get(
   appointmentController.getAppointmentById,
 );
 
-// UPDATE
+// UPDATE APPOINTMENT
 router.put(
   "/:id",
   protect,
@@ -40,7 +61,7 @@ router.put(
   appointmentController.updateAppointment,
 );
 
-// DELETE
+// DELETE APPOINTMENT
 router.delete(
   "/:id",
   protect,

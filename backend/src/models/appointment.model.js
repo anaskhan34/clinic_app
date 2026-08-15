@@ -37,7 +37,7 @@ const appointmentSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"],
+      enum: ["PENDING", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"],
       default: "PENDING",
     },
 
@@ -52,12 +52,17 @@ const appointmentSchema = new mongoose.Schema(
 
 appointmentSchema.index(
   {
-    doctor: 1,
+    doctorId: 1,
     appointmentDate: 1,
     appointmentTime: 1,
   },
   {
     unique: true,
+    partialFilterExpression: {
+      status: {
+        $in: ["PENDING", "CONFIRMED"],
+      },
+    },
   },
 );
 

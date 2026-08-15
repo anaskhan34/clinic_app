@@ -1,7 +1,9 @@
 import "dotenv/config";
 import mongoose from "mongoose";
+import http from "http";
 
 import app from "./app.js";
+import { initSocket } from "./socket/socket.js";
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
@@ -16,7 +18,13 @@ const startServer = async () => {
 
     console.log("MongoDB connected successfully");
 
-    app.listen(PORT, () => {
+    // Create HTTP server
+    const server = http.createServer(app);
+
+    // Initialize Socket.IO
+    initSocket(server);
+
+    server.listen(PORT, () => {
       console.log(`ClinicFlow server running on port: ${PORT}`);
     });
   } catch (error) {

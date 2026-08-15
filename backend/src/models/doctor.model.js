@@ -42,11 +42,54 @@ const doctorSchema = new mongoose.Schema(
 
     image: {
       type: String,
+      default: "",
+    },
+
+    imagePublicId: {
+      type: String,
+      default: "",
     },
 
     available: {
       type: Boolean,
       default: true,
+    },
+    schedule: {
+      monday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "17:00" },
+        enabled: { type: Boolean, default: true },
+      },
+      tuesday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "17:00" },
+        enabled: { type: Boolean, default: true },
+      },
+      wednesday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "17:00" },
+        enabled: { type: Boolean, default: true },
+      },
+      thursday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "17:00" },
+        enabled: { type: Boolean, default: true },
+      },
+      friday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "13:00" },
+        enabled: { type: Boolean, default: true },
+      },
+      saturday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "13:00" },
+        enabled: { type: Boolean, default: true },
+      },
+      sunday: {
+        start: { type: String, default: "09:00" },
+        end: { type: String, default: "17:00" },
+        enabled: { type: Boolean, default: false },
+      },
     },
   },
   {

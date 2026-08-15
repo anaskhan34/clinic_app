@@ -3,6 +3,7 @@ import { Doctor } from "../models/doctor.model.js";
 import { Clinic } from "../models/clinic.model.js";
 import { sendAppointmentConfirmation } from "../services/email.service.js";
 import { User } from "../models/user.model.js";
+import { getIO } from "../socket/socket.js";
 
 export const createAppointment = async (req, res) => {
   try {
@@ -71,6 +72,32 @@ export const createAppointment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Doctor is currently unavailable",
+      });
+    }
+
+    const appointmentDay = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Karachi",
+      weekday: "long",
+    }).format(new Date(`${appointmentDate}T00:00:00+05:00`));
+
+    const dayKey = appointmentDay.toLowerCase();
+
+    const daySchedule = doctorExists.schedule?.[dayKey];
+
+    if (!daySchedule || !daySchedule.enabled) {
+      return res.status(400).json({
+        success: false,
+        message: `Doctor is not available on ${appointmentDay}`,
+      });
+    }
+
+    if (
+      appointmentTime < daySchedule.start ||
+      appointmentTime >= daySchedule.end
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Doctor is available from ${daySchedule.start} to ${daySchedule.end}`,
       });
     }
 
@@ -159,6 +186,17 @@ export const createAppointment = async (req, res) => {
       queueNumber,
     });
 
+    const io = getIO();
+
+    io.to(`queue:${doctorId}:${appointmentDate}`).emit("queueUpdated", {
+      doctorId,
+      clinicId,
+      date: appointmentDate,
+      queueNumber,
+      appointmentId: appointment._id,
+      status: appointment.status,
+    });
+
     // Send confirmation email
     try {
       await sendAppointmentConfirmation({
@@ -190,20 +228,17 @@ export const createAppointment = async (req, res) => {
 // GET APPOINTMENTS
 export const getAppointments = async (req, res) => {
   try {
-    const filter = {};
+    let filter = {};
 
-    // PATIENT → only their appointments
     if (req.user.role === "PATIENT") {
       filter.patientId = req.user.userId;
     }
 
-    // DOCTOR → only their appointments
-    else if (req.user.role === "DOCTOR") {
+    if (req.user.role === "DOCTOR") {
       filter.doctorId = req.user.doctorId;
     }
 
-    // CLINIC_ADMIN → only their clinic's appointments
-    else if (req.user.role === "CLINIC_ADMIN") {
+    if (req.user.role === "CLINIC_ADMIN") {
       filter.clinicId = req.user.clinicId;
     }
 
@@ -234,10 +269,7 @@ export const getAppointments = async (req, res) => {
 // GET APPOINTMENT BY ID
 export const getAppointmentById = async (req, res) => {
   try {
-    const appointment = await Appointment.findById(req.params.id)
-      .populate("patientId", "name email")
-      .populate("doctorId", "name specialization consultationFee")
-      .populate("clinicId", "name city address");
+    const appointment = await Appointment.findById(req.params.id);
 
     if (!appointment) {
       return res.status(404).json({
@@ -278,6 +310,22 @@ export const getAppointmentById = async (req, res) => {
 
     // SUPER_ADMIN → allowed
 
+    // Populate AFTER authorization
+    await appointment.populate([
+      {
+        path: "patientId",
+        select: "name email",
+      },
+      {
+        path: "doctorId",
+        select: "name specialization consultationFee",
+      },
+      {
+        path: "clinicId",
+        select: "name city address",
+      },
+    ]);
+
     res.status(200).json({
       success: true,
       data: appointment,
@@ -302,14 +350,23 @@ export const updateAppointment = async (req, res) => {
       });
     }
 
-    const { status } = req.body;
-
     const allowedStatuses = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"];
 
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
         message: "Invalid appointment status",
+      });
+    }
+
+    // Prevent changing a completed/cancelled appointment
+    if (
+      appointment.status === "COMPLETED" ||
+      appointment.status === "CANCELLED"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot update an appointment that is already ${appointment.status.toLowerCase()}`,
       });
     }
 
@@ -355,6 +412,20 @@ export const updateAppointment = async (req, res) => {
     appointment.status = status;
 
     await appointment.save();
+
+    const io = getIO();
+    // socket io
+    io.to(`queue:${appointment.doctorId}:${appointment.appointmentDate}`).emit(
+      "queueUpdated",
+      {
+        doctorId: appointment.doctorId,
+        clinicId: appointment.clinicId,
+        date: appointment.appointmentDate,
+        appointmentId: appointment._id,
+        queueNumber: appointment.queueNumber,
+        status: appointment.status,
+      },
+    );
 
     res.status(200).json({
       success: true,
@@ -409,6 +480,206 @@ export const deleteAppointment = async (req, res) => {
     res.status(400).json({
       success: false,
       message: "Invalid appointment ID",
+    });
+  }
+};
+
+// GET AVAILABLE TIME SLOTS
+export const getAvailableSlots = async (req, res) => {
+  try {
+    const { doctorId, date } = req.query;
+
+    if (!doctorId || !date) {
+      return res.status(400).json({
+        success: false,
+        message: "doctorId and date are required",
+      });
+    }
+
+    const doctor = await Doctor.findById(doctorId);
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    if (!doctor.available) {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor is currently unavailable",
+      });
+    }
+
+    const selectedDate = new Date(`${date}T00:00:00`);
+
+    const dayNames = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+
+    const dayName = dayNames[selectedDate.getDay()];
+
+    const schedule = doctor.schedule?.[dayName];
+
+    if (!schedule || !schedule.enabled) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          date,
+          doctorId,
+          bookedSlots: [],
+          availableSlots: [],
+          message: "Doctor is not available on this day",
+        },
+      });
+    }
+
+    const slots = [];
+
+    let [startHour, startMinute] = schedule.start.split(":").map(Number);
+    const [endHour, endMinute] = schedule.end.split(":").map(Number);
+
+    let currentMinutes = startHour * 60 + startMinute;
+    const endMinutes = endHour * 60 + endMinute;
+
+    // 30-minute slots
+    while (currentMinutes < endMinutes) {
+      const hour = Math.floor(currentMinutes / 60);
+      const minute = currentMinutes % 60;
+
+      slots.push(
+        `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      );
+
+      currentMinutes += 30;
+    }
+
+    // Get booked appointments
+    const appointments = await Appointment.find({
+      doctorId,
+      appointmentDate: date,
+      status: {
+        $in: ["PENDING", "CONFIRMED"],
+      },
+    }).select("appointmentTime");
+
+    const bookedSlots = appointments.map(
+      (appointment) => appointment.appointmentTime,
+    );
+
+    const availableSlots = slots.filter((slot) => !bookedSlots.includes(slot));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        date,
+        doctorId,
+        day: dayName,
+        workingHours: {
+          start: schedule.start,
+          end: schedule.end,
+        },
+        bookedSlots,
+        availableSlots,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// GET TODAY/DATE QUEUE
+export const getDoctorQueue = async (req, res) => {
+  try {
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: "date is required",
+      });
+    }
+
+    if (!req.user.doctorId) {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor profile is not assigned",
+      });
+    }
+
+    const appointments = await Appointment.find({
+      doctorId: req.user.doctorId,
+      appointmentDate: date,
+      status: {
+        $in: ["PENDING", "CONFIRMED"],
+      },
+    })
+      .populate("patientId", "name email")
+      .populate("clinicId", "name city address")
+      .sort({ queueNumber: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        date,
+        doctorId: req.user.doctorId,
+        currentQueue: appointments.length ? appointments[0].queueNumber : null,
+        appointments,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// GET CURRENT QUEUE
+export const getQueue = async (req, res) => {
+  try {
+    const { doctorId, date } = req.query;
+
+    if (!doctorId || !date) {
+      return res.status(400).json({
+        success: false,
+        message: "doctorId and date are required",
+      });
+    }
+
+    const appointments = await Appointment.find({
+      doctorId,
+      appointmentDate: date,
+      status: {
+        $in: ["PENDING", "CONFIRMED"],
+      },
+    })
+      .populate("patientId", "name email")
+      .sort({ queueNumber: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        doctorId,
+        date,
+        currentQueue: appointments.length ? appointments[0].queueNumber : null,
+        appointments,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };

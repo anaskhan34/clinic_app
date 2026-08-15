@@ -5,13 +5,39 @@ import { protect } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-// GET all clinics
-router.get("/", clinicDataController.getClinicData);
+// ====================
+// PUBLIC
+// ====================
 
-// GET clinic by ID
-router.get("/:id", clinicDataController.getClinicById);
+// Get all clinics
+router.get(
+  "/",
+  protect,
+  authorize("PATIENT", "DOCTOR", "CLINIC_ADMIN", "SUPER_ADMIN"),
+  clinicDataController.getClinicData,
+);
 
-// CREATE clinic
+// ====================
+// CLINIC ADMIN
+// ====================
+
+// Get my clinic
+router.get(
+  "/my-clinic",
+  protect,
+  authorize("CLINIC_ADMIN"),
+  clinicDataController.getMyClinic,
+);
+
+// Get clinic by ID
+router.get(
+  "/:id",
+  protect,
+  authorize("PATIENT", "DOCTOR", "CLINIC_ADMIN", "SUPER_ADMIN"),
+  clinicDataController.getClinicById,
+);
+
+// Create clinic
 router.post(
   "/",
   protect,
@@ -19,7 +45,7 @@ router.post(
   clinicDataController.createClinic,
 );
 
-// UPDATE clinic
+// Update clinic
 router.put(
   "/:id",
   protect,
@@ -27,7 +53,7 @@ router.put(
   clinicDataController.updateClinic,
 );
 
-// DELETE clinic
+// Delete clinic
 router.delete(
   "/:id",
   protect,
